@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+    --primary: #00f2ff;
+    --bg: #070708;
+    --card: #121217;
+    --card-hover: #1a1a24;
+    --text: #ffffff;
+    --text-dim: #888888;
+    --border: rgba(255, 255, 255, 0.05);
+    --accent: #ff0055;
+    --success: #00ff88;
+}
+
+.theme-light {
+    --bg: #f3f4f6;
+    --card: #ffffff;
+    --card-hover: #f9fafb;
+    --text: #111827;
+    --text-dim: #6b7280;
+    --border: rgba(0, 0, 0, 0.1);
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+.glass {
+    background: var(--card);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #00f2ff, #0099ff);
+    color: #000000;
+    font-weight: 800;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 32px;
+    padding: 24px;
+    transition: all 0.3s ease;
+}
+
+.label {
+    color: var(--text-dim);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.val {
+    color: var(--text);
+    font-weight: 900;
+    font-style: italic;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type=number],
+input[type=text] {
+    -moz-appearance: textfield;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    outline: none;
+    text-align: center;
+}
+
+input:focus {
+    border-color: var(--primary);
+}
+
+.section-header {
+    font-size: 24px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+    margin-bottom: 20px;
+    color: var(--text);
+}

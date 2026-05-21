@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Backend activo",
+    "ok": true,
+    "msg": "Status 200, 31 ejercicios"
+  },
+  {
+    "name": "Filtro group_id",
+    "ok": true,
+    "msg": "Devuelve 0 ejercicios para group_id=1"
+  },
+  {
+    "name": "Muscle Groups endpoint",
+    "ok": true,
+    "msg": "6 grupos musculares"
+  },
+  {
+    "name": "Rutina sin ejercicios",
+    "ok": true,
+    "msg": "Status 200"
+  },
+  {
+    "name": "Sesion: volumen correcto (10x80=800)",
+    "ok": true,
+    "msg": "volume=800.0 (esperado 800.0), calories=10.2"
+  },
+  {
+    "name": "User inexistente -> 404",
+    "ok": true,
+    "msg": "Status 404 (esperado 404 para user inexistente)"
+  },
+  {
+    "name": "Session ID inexistente -> 404",
+    "ok": true,
+    "msg": "Status 404 (esperado 404)"
+  },
+  {
+    "name": "exercise_id invalido -> debe rechazar",
+    "ok": true,
+    "msg": "Status 400 (rechazado correctamente)"
+  },
+  {
+    "name": "Routines user inexistente = lista vacia",
+    "ok": true,
+    "msg": "Devuelve: []"
+  },
+  {
+    "name": "Stats endpoint - estructura correcta",
+    "ok": true,
+    "msg": "{'total_sessions': 7, 'total_volume': 7880.0, 'total_calories': 712.3560999999999}"
+  },
+  {
+    "name": "GET user existente",
+    "ok": true,
+    "msg": "Status 200, data={'username': 'IronWarrior', 'weight_kg': 85.0, 'height_cm': 182.0, 'body_fat_pct': None, 'unit_preference': 'kg', 'measure_unit': 'cm', 'theme': 'dark', 'id': 1}"
+  },
+  {
+    "name": "GET user inexistente -> 404",
+    "ok": true,
+    "msg": "Status 404, body={\"detail\":\"Usuario no encontrado\"} "
+  }
+]
