@@ -55,7 +55,11 @@ class TestRoutinesCRUDDirect:
                 )
             ]
         )
+        from fastapi.encoders import jsonable_encoder
         created = main.create_routine(routine=payload, db=db_session)
+        encoded = jsonable_encoder(created)
+        assert encoded.get("id") is not None
+        assert encoded.get("name") == "Rutina Torso Fuerza"
         assert created.id is not None
         assert created.name == "Rutina Torso Fuerza"
 

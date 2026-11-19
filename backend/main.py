@@ -86,6 +86,7 @@ def create_routine(routine: schemas.RoutineCreate, db: Session = Depends(get_db)
         )
         db.add(db_ex)
     db.commit()
+    db.refresh(db_routine)
     return db_routine
 
 @app.put("/routines/{routine_id}")
