@@ -1,20 +1,17 @@
 [run]
+relative_files = True
 source = 
-    main
-    biomech_engine
-    database
-    models
-    schemas
+    backend
 omit =
-    tests/*
-    seed.py
-    run_tests.py
-    migrate.py
-    diagnostico_emg.py
-    test_engine.py
-    test_integration.py
-    update_images.py
-    update_lat.py
+    backend/tests/*
+    backend/seed.py
+    backend/run_tests.py
+    backend/migrate.py
+    backend/diagnostico_emg.py
+    backend/test_engine.py
+    backend/test_integration.py
+    backend/update_images.py
+    backend/update_lat.py
 
 [report]
 show_missing = True

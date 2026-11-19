@@ -31,12 +31,19 @@ if os.path.exists(assets_path):
 else:
     print("[SYSTEM] Ejecutando en modo de desarrollo separado (Next.js en puerto 3000 / FastAPI en puerto 8000).")
 
-# Configurar CORS para el frontend en React
+# Configurar CORS seguro para el frontend en React (cumplimiento Sonar / CWE-942)
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # En producción cambiar a la URL del frontend
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -508,4 +515,4 @@ def serve_spa_fallback(catchall: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
