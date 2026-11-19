@@ -19,6 +19,9 @@ except Exception as e:
 
 app = FastAPI(title="BioHevy API")
 
+# Constantes de error para cumplimiento de mantenibilidad y Sonar
+USER_NOT_FOUND = "Usuario no encontrado"
+
 # Configurar rutas absolutas para portabilidad
 base_dir = os.path.dirname(os.path.abspath(__file__))
 dist_path = os.path.join(base_dir, "..", "biohevy-web", "dist")
@@ -149,7 +152,7 @@ def get_routines(user_id: int, db: Session = Depends(get_db)):
 def start_session(session: schemas.SessionCreate, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == session.user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
         
     db_session = models.Session(
         user_id=session.user_id,
@@ -161,7 +164,7 @@ def start_session(session: schemas.SessionCreate, db: Session = Depends(get_db))
         db.commit()
         db.refresh(db_session)
         return db_session
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise HTTPException(status_code=400, detail="Error de integridad (FK) en inicio de sesión")
 
@@ -219,11 +222,11 @@ def end_session(session_id: int, data: schemas.SessionEnd, db: Session = Depends
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
         if "IntegrityError" in str(type(e)):
             raise HTTPException(status_code=400, detail="Error de integridad (FK) en los datos proporcionados")
-        print(f"--- DATABASE ERROR ---")
+        print("--- DATABASE ERROR ---")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -278,14 +281,14 @@ def clerk_login(data: ClerkLoginRequest, db: Session = Depends(get_db)):
 def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
     return user
 
 @app.put("/users/{user_id}/settings")
 def update_user_settings(user_id: int, settings: dict, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
     
     if "unit_preference" in settings:
         user.unit_preference = settings["unit_preference"]
@@ -505,7 +508,7 @@ def serve_index():
 @app.get("/{catchall:path}")
 def serve_spa_fallback(catchall: str):
     # Evitar capturar rutas de la API reales
-    if catchall.startswith("api") or catchall.startswith("ws") or catchall.startswith("docs"):
+    if catchall.startswith(("api", "ws", "docs")):
         raise HTTPException(status_code=404, detail="Not Found")
     
     index_html = os.path.join(dist_path, "index.html")

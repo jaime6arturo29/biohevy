@@ -287,9 +287,9 @@ class FatiguePredictor:
             
             # Score compuesto ponderado
             # Usar el último score conocido de cada indicador
-            latest_mnf = mnf_score if is_active else (self._last_mnf_score if hasattr(self, '_last_mnf_score') else 0.0)
-            latest_valley = valley_score if not is_active else (self._last_valley_score if hasattr(self, '_last_valley_score') else 0.0)
-            latest_peak = peak_score if is_active else (self._last_peak_score if hasattr(self, '_last_peak_score') else 0.0)
+            latest_mnf = mnf_score if is_active else getattr(self, '_last_mnf_score', 0.0)
+            latest_valley = valley_score if not is_active else getattr(self, '_last_valley_score', 0.0)
+            latest_peak = peak_score if is_active else getattr(self, '_last_peak_score', 0.0)
             
             # Guardar últimos scores conocidos
             if is_active and mnf > 0:

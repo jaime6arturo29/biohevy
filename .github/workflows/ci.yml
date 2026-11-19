@@ -14,13 +14,13 @@ jobs:
     steps:
       # 1. Checkout del código con historial completo para SonarCloud
       - name: Checkout del Repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       # 2. Configurar entorno Python
       - name: Configurar Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -28,8 +28,7 @@ jobs:
       # 3. Instalar dependencias del Backend y Testing
       - name: Instalar Dependencias de Backend y Testing
         run: |
-          python -m pip install --upgrade pip
-          pip install fastapi uvicorn sqlalchemy numpy scipy python-dotenv pydantic pytest pytest-cov httpx
+          python -m pip install --no-cache-dir -r backend/requirements-ci.txt
 
       # 4. Ejecutar Suite de Pruebas de Pytest y generar cobertura XML
       - name: Ejecutar Pruebas Automatizadas con Cobertura
@@ -40,7 +39,7 @@ jobs:
 
       # 5. Escaneo oficial en SonarCloud
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v3
+        uses: SonarSource/sonarcloud-github-action@02ef423a97b0d923488800277d545b73425769ff # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -51,12 +50,12 @@ jobs:
             -Dsonar.sources=backend
             -Dsonar.tests=backend/tests
             -Dsonar.python.coverage.reportPaths=backend/coverage.xml
-            -Dsonar.exclusions=biohevy-web/**,frontend/**,firmware_esp32/**,backend/tests/**,backend/seed.py,backend/run_tests.py,backend/migrate.py,backend/diagnostico_emg.py,backend/test_engine.py,backend/test_integration.py,backend/update_images.py,backend/update_lat.py,backend/biohevy.db,backend/htmlcov/**,tests/**,seed.py,run_tests.py,migrate.py,diagnostico_emg.py,test_engine.py,test_integration.py,update_images.py,update_lat.py,biohevy.db,htmlcov/**,**/*.json,**/*.bat,**/*.ino,**/*.db,**/*.html,**/__pycache__/**
-            -Dsonar.cpd.exclusions=biohevy-web/**,frontend/**,backend/tests/**,backend/seed.py,tests/**,seed.py
+            -Dsonar.exclusions=.github/**,**/*.yml,**/*.yaml,biohevy-web/**,frontend/**,firmware_esp32/**,backend/tests/**,backend/seed.py,backend/run_tests.py,backend/migrate.py,backend/diagnostico_emg.py,backend/test_engine.py,backend/test_integration.py,backend/update_images.py,backend/update_lat.py,backend/biohevy.db,backend/htmlcov/**,tests/**,seed.py,run_tests.py,migrate.py,diagnostico_emg.py,test_engine.py,test_integration.py,update_images.py,update_lat.py,biohevy.db,htmlcov/**,**/*.json,**/*.bat,**/*.ino,**/*.db,**/*.html,**/__pycache__/**
+            -Dsonar.cpd.exclusions=.github/**,biohevy-web/**,frontend/**,backend/tests/**,backend/seed.py,tests/**,seed.py
 
       # 6. Verificación de Aprobación de Quality Gate
       - name: Validar SonarCloud Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
+        uses: SonarSource/sonarqube-quality-gate-action@d304d050d930c0218304b1d30f92d9b8e44c7f18 # v1.1.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
