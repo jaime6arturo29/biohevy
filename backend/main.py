@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 import asyncio
 import json
@@ -222,10 +223,11 @@ def end_session(session_id: int, data: schemas.SessionEnd, db: Session = Depends
         }
     except HTTPException:
         raise
-    except Exception:
+    except IntegrityError:
         db.rollback()
-        if "IntegrityError" in str(type(e)):
-            raise HTTPException(status_code=400, detail="Error de integridad (FK) en los datos proporcionados")
+        raise HTTPException(status_code=400, detail="Error de integridad (FK) en los datos proporcionados")
+    except Exception as e:
+        db.rollback()
         print("--- DATABASE ERROR ---")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
@@ -273,6 +275,8 @@ def clerk_login(data: ClerkLoginRequest, db: Session = Depends(get_db)):
                 db.rollback()
                 # Final fallback if something went wrong during concurrent creation
                 user = db.query(models.User).filter(models.User.clerk_id == data.clerk_id).first()
+                if not user:
+                    raise HTTPException(status_code=409, detail="No fue posible registrar el usuario")
     
     return {"id": user.id, "clerk_id": user.clerk_id, "username": user.username}
 
@@ -356,60 +360,89 @@ manager = ConnectionManager()
 predictor_ch1 = biomech_engine.FatiguePredictor(fs=430, window_ms=300, overlap_ms=150)
 predictor_ch2 = biomech_engine.FatiguePredictor(fs=430, window_ms=300, overlap_ms=150)
 
+def _log_emg_debug(metrics_ch1: list, alerts_ch1: list) -> None:
+    """Imprime en consola el último bloque de métricas del canal 1 (diagnóstico)."""
+    if not metrics_ch1:
+        return
+    m = metrics_ch1[-1]
+    active = "ACT" if m.get('is_active', False) else "rest"
+    print(
+        f"[EMG] {active} RMS={m.get('rms', 0):.0f} NF={predictor_ch1.noise_floor:.0f} "
+        f"TH={predictor_ch1.activity_threshold:.0f} MNF={m.get('mnf', 0):.0f}Hz | "
+        f"FI={m.get('fatigue_index', 0):.1f}% (mnf:{m.get('mnf_score', 0):.0f} "
+        f"valley:{m.get('valley_score', 0):.0f} peak:{m.get('peak_score', 0):.0f}) | "
+        f"{m.get('state', '?')} | Alerts:{len(alerts_ch1)}"
+    )
+
+
+def _build_channel_payload(raw: list, metrics: list, alerts: list) -> dict:
+    return {"raw": raw, "metrics": metrics[-1] if metrics else None, "alerts": alerts}
+
+
+def process_emg_frame(data: dict) -> Optional[dict]:
+    """Procesa un frame del ESP32 con el motor biomecánico y construye el payload para el frontend."""
+    if "ch1" not in data or "ch2" not in data:
+        return None
+    metrics_ch1, alerts_ch1 = predictor_ch1.process_incoming_data(data["ch1"])
+    metrics_ch2, alerts_ch2 = predictor_ch2.process_incoming_data(data["ch2"])
+    _log_emg_debug(metrics_ch1, alerts_ch1)
+    return {
+        "type": "REALTIME_EMG",
+        "ch1": _build_channel_payload(data["ch1"], metrics_ch1, alerts_ch1),
+        "ch2": _build_channel_payload(data["ch2"], metrics_ch2, alerts_ch2),
+    }
+
+
 @app.websocket("/ws/emg")
 async def websocket_emg(websocket: WebSocket):
     """Endpoint para el ESP32. Recibe datos crudos y los reenvía procesados a los frontends."""
     await websocket.accept()
     print("[WS] ESP32 conectado al servidor.")
-    
     try:
         while True:
             data = await websocket.receive_json()
-            
-            if "ch1" in data and "ch2" in data:
-                ch1_data = data["ch1"]
-                ch2_data = data["ch2"]
-                
-                # Procesar cada canal con el motor biomecánico
-                metrics_ch1, alerts_ch1 = predictor_ch1.process_incoming_data(ch1_data)
-                metrics_ch2, alerts_ch2 = predictor_ch2.process_incoming_data(ch2_data)
-                
-                # Debug: mostrar métricas en consola
-                if metrics_ch1:
-                    m = metrics_ch1[-1]
-                    active = "ACT" if m.get('is_active', False) else "rest"
-                    st = m.get('state', '?')
-                    fi = m.get('fatigue_index', 0)
-                    ms = m.get('mnf_score', 0)
-                    vs = m.get('valley_score', 0)
-                    ps = m.get('peak_score', 0)
-                    nf = predictor_ch1.noise_floor
-                    th = predictor_ch1.activity_threshold
-                    print(f"[EMG] {active} RMS={m.get('rms',0):.0f} NF={nf:.0f} TH={th:.0f} MNF={m.get('mnf',0):.0f}Hz | FI={fi:.1f}% (mnf:{ms:.0f} valley:{vs:.0f} peak:{ps:.0f}) | {st} | Alerts:{len(alerts_ch1)}")
-                
-                # Construir payload para el frontend con datos reales
-                payload = {
-                    "type": "REALTIME_EMG",
-                    "ch1": {
-                        "raw": ch1_data,
-                        "metrics": metrics_ch1[-1] if metrics_ch1 else None,
-                        "alerts": alerts_ch1
-                    },
-                    "ch2": {
-                        "raw": ch2_data,
-                        "metrics": metrics_ch2[-1] if metrics_ch2 else None,
-                        "alerts": alerts_ch2
-                    }
-                }
-                
-                # Reenviar a todos los frontends conectados
+            payload = process_emg_frame(data)
+            if payload is not None:
                 await manager.broadcast_to_frontends(payload)
-                    
     except WebSocketDisconnect:
-        print("[WS] 🔌 ESP32 desconectado.")
+        print("[WS] ESP32 desconectado.")
     except Exception as e:
-        print(f"[WS] 💥 Error en WebSocket ESP32: {e}")
+        print(f"[WS] Error en WebSocket ESP32: {e}")
         traceback.print_exc()
+
+
+def _start_monitoring_all() -> str:
+    predictor_ch1.start_monitoring()
+    predictor_ch2.start_monitoring()
+    return "LISTENING"
+
+
+def _reset_all() -> str:
+    predictor_ch1.reset()
+    predictor_ch2.reset()
+    return "IDLE"
+
+
+FRONTEND_ACTIONS = {
+    "START_MONITORING": _start_monitoring_all,
+    "NEW_SET": _start_monitoring_all,
+    "RESET": _reset_all,
+}
+
+
+def handle_frontend_command(raw: str) -> Optional[dict]:
+    """Traduce un comando JSON del frontend en un cambio de estado de los predictores."""
+    try:
+        cmd = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(cmd, dict):
+        return None
+    handler = FRONTEND_ACTIONS.get(cmd.get("action", ""))
+    if handler is None:
+        return None
+    return {"type": "STATE_CHANGE", "state": handler()}
+
 
 @app.websocket("/ws/emg/frontend")
 async def websocket_emg_frontend(websocket: WebSocket):
@@ -418,34 +451,11 @@ async def websocket_emg_frontend(websocket: WebSocket):
     try:
         while True:
             raw = await websocket.receive_text()
-            try:
-                cmd = json.loads(raw)
-                action = cmd.get("action", "")
-                
-                if action == "START_MONITORING":
-                    predictor_ch1.start_monitoring()
-                    predictor_ch2.start_monitoring()
-                    print("[WS] 📡 Monitoreo EMG iniciado — Auto-calibración activa.")
-                    await websocket.send_json({"type": "STATE_CHANGE", "state": "LISTENING"})
-                    
-                elif action == "NEW_SET":
-                    predictor_ch1.start_monitoring()
-                    predictor_ch2.start_monitoring()
-                    print("[WS] 🔄 Nueva serie — Recalibrando automáticamente.")
-                    await websocket.send_json({"type": "STATE_CHANGE", "state": "LISTENING"})
-                    
-                elif action == "RESET":
-                    predictor_ch1.reset()
-                    predictor_ch2.reset()
-                    print("[WS] ⏹ Monitoreo detenido.")
-                    await websocket.send_json({"type": "STATE_CHANGE", "state": "IDLE"})
-                    
-            except json.JSONDecodeError:
-                pass
-                
-    except WebSocketDisconnect:
-        manager.disconnect_frontend(websocket)
+            response = handle_frontend_command(raw)
+            if response is not None:
+                await websocket.send_json(response)
     except Exception:
+        # Incluye WebSocketDisconnect: en cualquier caso se libera la conexión
         manager.disconnect_frontend(websocket)
 
 @app.get("/sessions")
