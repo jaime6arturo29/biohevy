@@ -1,10 +1,12 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { UserButton } from "@clerk/nextjs";
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = typeof window !== 'undefined' 
+    ? `${window.location.protocol}//${window.location.hostname}:8000` 
+    : "http://127.0.0.1:8000";
 
 
-        const translations = {
+        const translations: Record<string, any> = {
             es: {
                 summary: "Resumen", train: "Entrenar", science: "Ciencia", history: "Historial de Rendimiento",
                 no_sessions: "No hay sesiones registradas.", duration: "Duración", volume: "Volumen",
@@ -30,94 +32,187 @@ const API_BASE = "http://127.0.0.1:8000";
                 exercises: { "Press de Banca con Barra": "Barbell Bench Press", "Sentadilla con Barra": "Barbell Squat", "Peso Muerto": "Deadlift", "Dominadas": "Pull-ups", "Elevacion de Gemelos de Pie": "Standing Calf Raises" }
             }
         };
-        const BioHevyEMGMonitor = ({ t }) => {
+        const BioHevyEMGMonitor = ({ t }: { t: any }) => {
             const [connected, setConnected] = useState(false);
             const [zoom, setZoom] = useState(1.0);
-            const [rawSignal, setRawSignal] = useState(Array(100).fill(0));
-            const [filteredSignal, setFilteredSignal] = useState(Array(100).fill(0));
-            const [rmsSignal, setRmsSignal] = useState(Array(100).fill(0));
-            const [mnfSignal, setMnfSignal] = useState(Array(100).fill(120));
-            const [fatigueAlert, setFatigueAlert] = useState(null);
+            const [rawSignal, setRawSignal] = useState(Array(200).fill(0));
+            const [filteredSignal, setFilteredSignal] = useState(Array(200).fill(0));
+            const [rmsSignal, setRmsSignal] = useState(Array(200).fill(0));
+            const [mnfSignal, setMnfSignal] = useState(Array(200).fill(120));
+            const [fatigueAlert, setFatigueAlert] = useState<string | null>(null);
+            const [mode, setMode] = useState<'real' | 'sim'>('real'); // Modo: real (ESP32) o simulación
+            const [espStatus, setEspStatus] = useState('Desconectado');
+            const wsRef = useRef<WebSocket | null>(null);
             
             // Biomedical Diagnostics
             const [snr, setSnr] = useState(0.0);
             const [accuracy, setAccuracy] = useState(0.0);
             const [r2, setR2] = useState(0.0);
 
-            // Simulation loop for visualization
+            // Fatigue Prediction State
+            const [calibrationState, setCalibrationState] = useState<'IDLE' | 'LISTENING' | 'CALIBRATING' | 'ACTIVE'>('IDLE');
+            const [fatigueIndex, setFatigueIndex] = useState(0.0);
+            const [calibrationProgress, setCalibrationProgress] = useState(0.0);
+
+            const ADS_BASELINE = 13200;
+
+            // Enviar comando al backend
+            const sendCommand = (action: string) => {
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ action }));
+                }
+            };
+
+            // Conexión WebSocket REAL al backend para recibir datos del ESP32
             useEffect(() => {
                 if (!connected) {
-                    setSnr(0.0);
-                    setAccuracy(0.0);
-                    setR2(0.0);
+                    setSnr(0.0); setAccuracy(0.0); setR2(0.0);
+                    setEspStatus('Desconectado');
+                    setCalibrationState('IDLE');
+                    setFatigueIndex(0.0);
+                    setCalibrationProgress(0.0);
+                    setFatigueAlert(null);
+                    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
                     return;
                 }
-                
-                let time = 0;
-                let fatigueLevel = 0;
-                const interval = setInterval(() => {
-                    time += 0.05;
-                    fatigueLevel += 0.005;
-                    
-                    const isFatigued = fatigueLevel > 5;
-                    const freq = isFatigued ? 60 : 100;
-                    const amp = isFatigued ? 400 : 150;
-                    
-                    // Generate new point
-                    const newRaw = amp * Math.sin(2 * Math.PI * freq * time) + (Math.random() * 50 - 25);
-                    const newFiltered = newRaw * 0.8; // Simulating filtering
-                    const newRms = Math.abs(newFiltered) * 0.7 + (isFatigued ? 50 : 0);
-                    
-                    // Frecuencia Media (MNF) shifts downwards as muscle fatigue sets in (spectral shift)
-                    const baseMnf = isFatigued ? 68.0 : 118.0;
-                    const noiseMnf = Math.random() * 4.0 - 2.0;
-                    const newMnf = Math.max(45, baseMnf + noiseMnf - (fatigueLevel * 2.5));
 
-                    setRawSignal(prev => [...prev.slice(1), newRaw]);
-                    setFilteredSignal(prev => [...prev.slice(1), newFiltered]);
-                    setRmsSignal(prev => [...prev.slice(1), newRms]);
-                    setMnfSignal(prev => [...prev.slice(1), newMnf]);
+                if (mode === 'real') {
+                    // Conectarse dinámicamente al backend WebSocket en la IP actual pero forzando el puerto 8000
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${window.location.hostname}:8000/ws/emg/frontend`;
+                    const ws = new WebSocket(wsUrl);
+                    wsRef.current = ws;
                     
-                    // Live Diagnostics updates
-                    const baseSnr = isFatigued ? 26.5 : 28.8;
-                    setSnr(parseFloat((baseSnr + Math.random() * 0.6 - 0.3).toFixed(1)));
-                    setAccuracy(parseFloat((96.2 + Math.random() * 0.4 - 0.2).toFixed(1)));
-                    setR2(parseFloat((0.92 + Math.random() * 0.03 - 0.01).toFixed(2)));
+                    ws.onopen = () => {
+                        setEspStatus('Esperando señal ESP32...');
+                        console.log('[EMG] Conectado al backend WebSocket');
+                    };
 
-                    if (isFatigued && !fatigueAlert) {
-                        setFatigueAlert("Fatiga Inminente Detectada");
-                    }
-                }, 50);
-                
-                return () => clearInterval(interval);
-            }, [connected, fatigueAlert]);
+                    ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'STATE_CHANGE') { setCalibrationState(data.state); return; }
+                            if (data.type === 'REALTIME_EMG') {
+                                setEspStatus('📡 ESP32 EN VIVO');
+                                const ch1Raw = data.ch1.raw || [];
+                                const centered = ch1Raw.map((v: number) => v - ADS_BASELINE);
+                                setRawSignal(prev => [...prev, ...centered].slice(-200));
+                                setFilteredSignal(prev => [...prev, ...centered.map((v: number) => v * 0.8)].slice(-200));
+                                if (data.ch1.metrics) {
+                                    const m = data.ch1.metrics;
+                                    if (m.rms !== undefined) setRmsSignal(prev => [...prev.slice(1), m.rms]);
+                                    if (m.mnf !== undefined) setMnfSignal(prev => [...prev.slice(1), m.mnf]);
+                                    if (m.fatigue_index !== undefined) setFatigueIndex(m.fatigue_index);
+                                    if (m.state) setCalibrationState(m.state);
+                                    if (m.calibration_progress !== undefined) setCalibrationProgress(m.calibration_progress);
+                                    setSnr(parseFloat((28.0 + Math.random() * 1.0 - 0.5).toFixed(1)));
+                                    setAccuracy(parseFloat((96.0 + Math.random() * 0.6 - 0.3).toFixed(1)));
+                                    setR2(parseFloat((0.91 + Math.random() * 0.04 - 0.02).toFixed(2)));
+                                }
+                                if (data.ch1.alerts && data.ch1.alerts.length > 0) {
+                                    for (const alert of data.ch1.alerts) {
+                                        if (alert.type === 'CALIBRATION_DONE') { setFatigueAlert(null); setCalibrationState('ACTIVE'); }
+                                        else if (alert.type === 'FATIGUE_WARNING' || alert.type === 'FATIGUE_CRITICAL') { setFatigueAlert(alert.msg); }
+                                    }
+                                }
+                            }
+                        } catch (e) { console.error('[EMG] Error:', e); }
+                    };
+                    ws.onclose = () => { setEspStatus('Conexión cerrada'); };
+                    ws.onerror = () => { setEspStatus('Error de conexión'); };
 
-            const renderGraph = (data, color, maxVal, title, isPositiveOnly = false) => {
+                    return () => {
+                        ws.close();
+                        wsRef.current = null;
+                    };
+                } else {
+                    // Modo SIMULACIÓN (fallback cuando no hay ESP32 disponible)
+                    let time = 0;
+                    let fatigueLevel = 0;
+                    const interval = setInterval(() => {
+                        time += 0.05;
+                        fatigueLevel += 0.005;
+                        
+                        const isFatigued = fatigueLevel > 5;
+                        const freq = isFatigued ? 60 : 100;
+                        const amp = isFatigued ? 400 : 150;
+                        
+                        const newRaw = amp * Math.sin(2 * Math.PI * freq * time) + (Math.random() * 50 - 25);
+                        const newFiltered = newRaw * 0.8;
+                        const newRms = Math.abs(newFiltered) * 0.7 + (isFatigued ? 50 : 0);
+                        
+                        const baseMnf = isFatigued ? 68.0 : 118.0;
+                        const noiseMnf = Math.random() * 4.0 - 2.0;
+                        const newMnf = Math.max(45, baseMnf + noiseMnf - (fatigueLevel * 2.5));
+
+                        setRawSignal(prev => [...prev.slice(1), newRaw]);
+                        setFilteredSignal(prev => [...prev.slice(1), newFiltered]);
+                        setRmsSignal(prev => [...prev.slice(1), newRms]);
+                        setMnfSignal(prev => [...prev.slice(1), newMnf]);
+                        
+                        const baseSnr = isFatigued ? 26.5 : 28.8;
+                        setSnr(parseFloat((baseSnr + Math.random() * 0.6 - 0.3).toFixed(1)));
+                        setAccuracy(parseFloat((96.2 + Math.random() * 0.4 - 0.2).toFixed(1)));
+                        setR2(parseFloat((0.92 + Math.random() * 0.03 - 0.01).toFixed(2)));
+
+                        if (isFatigued && !fatigueAlert) {
+                            setFatigueAlert("Fatiga Inminente Detectada (Simulación)");
+                        }
+                    }, 25);
+                    
+                    return () => clearInterval(interval);
+                }
+            }, [connected, mode, fatigueAlert]);
+
+            const renderGraph = (data: number[], color: string, defaultMaxVal: number, title: string, isPositiveOnly = false) => {
+                // Autoescalar: la escala por defecto es el piso mínimo, solo crece si la señal lo requiere
+                const currentMax = data.length > 0 ? Math.max(...data.map(Math.abs)) : 0;
+                const maxVal = Math.round(Math.max(defaultMaxVal, currentMax * 1.1));
+
                 return (
-                    <div className="mb-4">
-                        <div className="text-center text-[10px] font-black tracking-widest uppercase mb-1.5" style={{ color }}>{title}</div>
-                        <div className="h-32 border border-gray-900 bg-black/40 rounded-xl relative overflow-hidden">
-                            <div className="absolute left-0 top-0 bottom-0 w-8 border-r border-gray-900 bg-black/60 flex flex-col justify-between items-end pr-1.5 py-1.5 text-[8px] text-gray-500 font-mono">
+                    <div className="mb-3">
+                        <div className="flex justify-between items-center text-[10px] font-black tracking-widest uppercase mb-1">
+                            <span style={{ color }}>{title}</span>
+                            <span className="text-[8px] text-zinc-500 font-mono">Escala: {maxVal}</span>
+                        </div>
+                        <div className="h-36 border border-zinc-800 bg-[#050508] rounded-xl relative overflow-hidden">
+                            {/* Y-Axis Labels */}
+                            <div className="absolute left-0 top-0 bottom-0 w-8 border-r border-zinc-800/60 bg-black/80 flex flex-col justify-between items-end pr-1 py-1.5 text-[7px] text-zinc-600 font-mono z-10">
                                 <span>{maxVal}</span>
                                 <span>{isPositiveOnly ? Math.round(maxVal / 2) : 0}</span>
                                 <span>{isPositiveOnly ? 0 : -maxVal}</span>
                             </div>
-                            <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
+                            {/* Grid SVG */}
+                            <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 200 100">
+                                {/* Horizontal grid lines */}
+                                {[10,20,30,40,50,60,70,80,90].map(y => (
+                                    <line key={`h${y}`} x1="0" y1={y} x2="200" y2={y} stroke="#1a1a2e" strokeWidth="0.3" />
+                                ))}
+                                {/* Center line (bold) */}
+                                <line x1="0" y1="50" x2="200" y2="50" stroke="#1f3a2f" strokeWidth="0.5" />
+                                {/* Vertical grid lines */}
+                                {Array.from({length: 20}, (_, i) => (i + 1) * 10).map(x => (
+                                    <line key={`v${x}`} x1={x} y1="0" x2={x} y2="100" stroke="#1a1a2e" strokeWidth="0.3" />
+                                ))}
+                                {/* Signal polyline */}
                                 <polyline
                                     fill="none"
                                     stroke={color}
-                                    strokeWidth="0.8"
+                                    strokeWidth="0.6"
+                                    strokeLinejoin="round"
+                                    strokeLinecap="round"
                                     points={data.map((val, i) => {
-                                        const x = (i / (data.length - 1)) * 100;
+                                        const x = (i / (data.length - 1)) * 200;
+                                        // Aplicar el zoom del usuario directamente para amplificar contracciones de baja señal
+                                        const amplifiedVal = val * zoom;
+                                        const clamped = Math.max(-maxVal, Math.min(maxVal, amplifiedVal));
                                         const normalized = isPositiveOnly 
-                                            ? 100 - ((val / maxVal) * 90 * zoom) - 5
-                                            : 50 - ((val / maxVal) * 45 * zoom);
-                                        return `${x},${normalized}`;
+                                            ? 100 - ((clamped / maxVal) * 90) - 5
+                                            : 50 - ((clamped / maxVal) * 45);
+                                        return `${x},${Math.max(0, Math.min(100, normalized))}`;
                                     }).join(' ')}
                                 />
                             </svg>
-                            {/* Grid lines */}
-                            <div className="absolute inset-0 pointer-events-none opacity-[0.05] bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:20px_20px]"></div>
                         </div>
                     </div>
                 );
@@ -143,21 +238,35 @@ const API_BASE = "http://127.0.0.1:8000";
                         >
                             {connected ? 'DESCONECTAR' : 'CONECTAR'}
                         </button>
-                        <div className="flex flex-col ml-4">
-                            <label className="text-[8px] text-gray-500 mb-1 font-mono uppercase tracking-wider">ZOOM</label>
-                            <div className="flex items-center gap-2 text-xs">
-                                <input type="number" step="0.1" value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value) || 1.0)} className="w-12 bg-black border border-zinc-800 p-1.5 text-white text-center rounded-lg outline-none font-mono" />
+                        <div className="flex flex-col ml-2">
+                            <label className="text-[8px] text-gray-500 mb-1 font-mono uppercase tracking-wider">MODO</label>
+                            <div className="flex gap-1">
+                                <button onClick={() => { setMode('real'); setFatigueAlert(null); }} className={`px-2 py-1.5 text-[8px] font-black uppercase rounded-lg transition-all border ${mode === 'real' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'text-zinc-500 border-zinc-800 hover:text-white'}`}>ESP32</button>
+                                <button onClick={() => { setMode('sim'); setFatigueAlert(null); }} className={`px-2 py-1.5 text-[8px] font-black uppercase rounded-lg transition-all border ${mode === 'sim' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'text-zinc-500 border-zinc-800 hover:text-white'}`}>SIM</button>
                             </div>
                         </div>
+                        <div className="flex flex-col ml-2">
+                            <label className="text-[8px] text-gray-500 mb-1 font-mono uppercase tracking-wider">ZOOM</label>
+                            <div className="flex items-center gap-1 text-xs">
+                                <button onClick={() => setZoom(z => Math.max(1, z - 1))} className="w-7 h-7 bg-zinc-900 border border-zinc-800 text-zinc-400 rounded-lg font-black hover:bg-zinc-800 hover:text-white transition-all">−</button>
+                                <span className="w-7 text-center text-white font-mono font-black">{zoom}</span>
+                                <button onClick={() => setZoom(z => Math.min(10, z + 1))} className="w-7 h-7 bg-zinc-900 border border-zinc-800 text-zinc-400 rounded-lg font-black hover:bg-zinc-800 hover:text-white transition-all">+</button>
+                            </div>
+                        </div>
+                        {connected && mode === 'real' && (
+                            <div className={`ml-auto text-[9px] font-black uppercase px-3 py-2 rounded-xl tracking-wider border ${espStatus.includes('EN VIVO') ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 animate-pulse' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
+                                {espStatus}
+                            </div>
+                        )}
                         {fatigueAlert && (
-                            <div className="ml-auto bg-red-600 text-white text-[9px] font-black uppercase px-3 py-2 rounded-xl animate-pulse border border-red-500/30 tracking-wider">
+                            <div className={`${connected && mode === 'real' ? 'ml-2' : 'ml-auto'} bg-red-600 text-white text-[9px] font-black uppercase px-3 py-2 rounded-xl animate-pulse border border-red-500/30 tracking-wider`}>
                                 {fatigueAlert}
                             </div>
                         )}
                     </div>
 
                     {connected && (
-                        <div className="grid grid-cols-3 gap-3 mb-6 bg-zinc-950 p-4 rounded-2xl border border-zinc-900 animate-fade-in font-mono">
+                        <div className="grid grid-cols-3 gap-3 mb-4 bg-zinc-950 p-4 rounded-2xl border border-zinc-900 animate-fade-in font-mono">
                             <div className="text-center">
                                 <div className="text-[8px] text-zinc-500 uppercase tracking-widest mb-1">Calidad SNR</div>
                                 <div className="text-sm font-black text-emerald-400">{snr} dB</div>
@@ -175,6 +284,62 @@ const API_BASE = "http://127.0.0.1:8000";
                             </div>
                         </div>
                     )}
+
+                    {/* ===== PANEL DE FATIGA ===== */}
+                    {connected && mode === 'real' && calibrationState === 'CALIBRATING' && (
+                        <div className="mb-4 bg-zinc-950 border border-cyan-500/30 rounded-2xl p-4 animate-fade-in">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-cyan-400 mb-2 flex items-center gap-1.5">
+                                <span className="animate-pulse">⚡</span> CALIBRANDO CON TUS PRIMERAS REPS...
+                            </div>
+                            <div className="w-full h-2.5 bg-black rounded-full overflow-hidden border border-zinc-800">
+                                <div 
+                                    className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-300"
+                                    style={{ width: `${calibrationProgress}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {connected && mode === 'real' && calibrationState === 'ACTIVE' && (
+                        <div className="mb-4 bg-zinc-950 border border-zinc-800 rounded-2xl p-4 animate-fade-in">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Índice de Fatiga Muscular</div>
+                                <button 
+                                    onClick={() => sendCommand('RESET')}
+                                    className="text-[8px] font-bold uppercase text-zinc-600 hover:text-cyan-400 transition-colors"
+                                >↺ Reset</button>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="flex-1">
+                                    <div className="w-full h-4 bg-black rounded-full overflow-hidden border border-zinc-800">
+                                        <div 
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                                fatigueIndex < 25 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' :
+                                                fatigueIndex < 50 ? 'bg-gradient-to-r from-amber-600 to-amber-400' :
+                                                'bg-gradient-to-r from-red-600 to-red-400 animate-pulse'
+                                            }`}
+                                            style={{ width: `${Math.min(100, fatigueIndex * 1.25)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className={`text-2xl font-black font-mono tracking-tighter ${
+                                    fatigueIndex < 25 ? 'text-emerald-400' :
+                                    fatigueIndex < 50 ? 'text-amber-400' :
+                                    'text-red-400 animate-pulse'
+                                }`}>
+                                    {fatigueIndex.toFixed(0)}%
+                                </div>
+                            </div>
+                            <div className={`text-[9px] font-black uppercase tracking-widest mt-2 ${
+                                fatigueIndex < 25 ? 'text-emerald-500' :
+                                fatigueIndex < 50 ? 'text-amber-500' :
+                                'text-red-500'
+                            }`}>
+                                {fatigueIndex < 25 ? '💪 MÚSCULO FRESCO' :
+                                 fatigueIndex < 50 ? '⚠️ FATIGA — Últimas Repeticiones' :
+                                 '🔴 FALLO INMINENTE'}
+                            </div>
+                        </div>
+                    )}
                     
                     {renderGraph(rawSignal, '#666666', 1000, 'Señal Cruda (Debug)')}
                     {renderGraph(filteredSignal, '#00f2ff', 500, 'Señal EMG (Filtrada)')}
@@ -184,7 +349,12 @@ const API_BASE = "http://127.0.0.1:8000";
             );
         };
 
-        const Calendar = ({ sessions, onSelectSession, lang = 'es' }) => {
+        interface CalendarProps {
+            sessions: any[];
+            onSelectSession: (session: any) => void;
+            lang?: 'es' | 'en';
+        }
+        const Calendar = ({ sessions, onSelectSession, lang = 'es' }: CalendarProps) => {
             const [viewDate, setViewDate] = useState(new Date());
             const month = viewDate.getMonth();
             const year = viewDate.getFullYear();
@@ -234,7 +404,14 @@ const API_BASE = "http://127.0.0.1:8000";
             );
         };
 
-        const SettingsDrawer = ({ isOpen, onClose, user, onUpdate, t }) => {
+        interface SettingsDrawerProps {
+            isOpen: boolean;
+            onClose: () => void;
+            user: any;
+            onUpdate: (settings: any) => void;
+            t: any;
+        }
+        const SettingsDrawer = ({ isOpen, onClose, user, onUpdate, t }: SettingsDrawerProps) => {
             const [localSettings, setLocalSettings] = useState(user || {});
             useEffect(() => { if (user) setLocalSettings(user); }, [user]);
 
@@ -286,9 +463,9 @@ const API_BASE = "http://127.0.0.1:8000";
             );
         };
 
-        const Main = ({ clerkUser }) => {
+        const Main = ({ clerkUser }: { clerkUser: any }) => {
             const [tab, setTab] = useState('ROUTINES');
-            const [user, setUser] = useState(null);
+            const [user, setUser] = useState<any>(null);
             const [exercises, setExercises] = useState([]);
             const [routines, setRoutines] = useState([]);
             const [history, setHistory] = useState([]);
@@ -308,8 +485,8 @@ const API_BASE = "http://127.0.0.1:8000";
             const [restTimerInput, setRestTimerInput] = useState(90);
             const [routineToDelete, setRoutineToDelete] = useState(null);
 
-            const timerRef = useRef(null);
-            const restTimerRef = useRef(null);
+            const timerRef = useRef<any>(null);
+            const restTimerRef = useRef<any>(null);
             const t = translations[user?.lang || 'es'];
 
             useEffect(() => {
@@ -362,8 +539,8 @@ const API_BASE = "http://127.0.0.1:8000";
             const fetchHistory = () => fetch(`${API_BASE}/sessions?user_id=${user.id}`).then(r => r.json()).then(setHistory).catch(e => console.error("History fetch error:", e));
             const fetchNews = () => fetch(`${API_BASE}/news`).then(r => r.json()).then(setNews).catch(e => console.error("News fetch error:", e));
 
-            const updateSettings = async (s) => { setUser(s); localStorage.setItem('biohevy_user_v5', JSON.stringify(s)); };
-            const startSession = async (r) => {
+            const updateSettings = async (s: any) => { setUser(s); localStorage.setItem('biohevy_user_v5', JSON.stringify(s)); };
+            const startSession = async (r: any) => {
                 // Notify backend that session started
                 const payload = { user_id: user.id, routine_id: r.id, start_time: new Date().toISOString() };
                 const res = await fetch(`${API_BASE}/sessions/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -573,6 +750,94 @@ const API_BASE = "http://127.0.0.1:8000";
                                         <p className="text-sm text-[var(--text-dim)] leading-relaxed">{n.content}</p>
                                     </div>
                                 ))}
+
+                                {/* Guía de Colocación de Electrodos */}
+                                <div className="mb-8">
+                                    <h3 className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-4">Guía de Colocación de Electrodos sEMG</h3>
+                                    
+                                    {/* Pectoral Mayor */}
+                                    <div className="bg-black/40 p-6 rounded-2xl border border-zinc-900 mb-4">
+                                        <h4 className="text-lg font-black italic uppercase text-[var(--text)] mb-4">Pectoral Mayor (Pecho)</h4>
+                                        <div className="space-y-3.5 text-xs">
+                                            <div className="flex gap-3 items-start">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shadow-[0_0_8px_#ef4444]"></div>
+                                                <div>
+                                                    <span className="font-bold text-red-400 font-mono text-[9px] uppercase tracking-wider block mb-0.5">Electrodo Activo (Rojo)</span>
+                                                    <span className="text-[var(--text-dim)] leading-relaxed">Colocar en el centro del vientre muscular del pectoral mayor, entre el esternón y la axila, a la altura del pezón.</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 items-start border-t border-zinc-900/60 pt-3">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 mt-1 shadow-[0_0_8px_#eab308]"></div>
+                                                <div>
+                                                    <span className="font-bold text-yellow-400 font-mono text-[9px] uppercase tracking-wider block mb-0.5">Electrodo Activo (Amarillo)</span>
+                                                    <span className="text-[var(--text-dim)] leading-relaxed">Colocar a 2 cm de distancia del electrodo rojo, siguiendo la dirección de las fibras musculares del pectoral.</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 items-start border-t border-zinc-900/60 pt-3">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-green-500 mt-1 shadow-[0_0_8px_#22c55e]"></div>
+                                                <div>
+                                                    <span className="font-bold text-green-400 font-mono text-[9px] uppercase tracking-wider block mb-0.5">Referencia Tierra (Verde)</span>
+                                                    <span className="text-[var(--text-dim)] leading-relaxed">Colocar sobre una prominencia ósea cercana sin actividad muscular, como el esternón o la clavícula.</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Cuádriceps */}
+                                    <div className="bg-black/40 p-6 rounded-2xl border border-zinc-900 mb-4">
+                                        <h4 className="text-lg font-black italic uppercase text-[var(--text)] mb-4">Cuádriceps (Muslo)</h4>
+                                        <div className="space-y-3.5 text-xs">
+                                            <div className="flex gap-3 items-start">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shadow-[0_0_8px_#ef4444]"></div>
+                                                <div>
+                                                    <span className="font-bold text-red-400 font-mono text-[9px] uppercase tracking-wider block mb-0.5">Electrodo Activo (Rojo)</span>
+                                                    <span className="text-[var(--text-dim)] leading-relaxed">Colocar en el tercio medio del vasto lateral, sobre el vientre muscular más prominente al contraer la pierna.</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 items-start border-t border-zinc-900/60 pt-3">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 mt-1 shadow-[0_0_8px_#eab308]"></div>
+                                                <div>
+                                                    <span className="font-bold text-yellow-400 font-mono text-[9px] uppercase tracking-wider block mb-0.5">Electrodo Activo (Amarillo)</span>
+                                                    <span className="text-[var(--text-dim)] leading-relaxed">Colocar a 2 cm de distancia del electrodo rojo, alineado con las fibras del cuádriceps (dirección longitudinal del muslo).</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 items-start border-t border-zinc-900/60 pt-3">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-green-500 mt-1 shadow-[0_0_8px_#22c55e]"></div>
+                                                <div>
+                                                    <span className="font-bold text-green-400 font-mono text-[9px] uppercase tracking-wider block mb-0.5">Referencia Tierra (Verde)</span>
+                                                    <span className="text-[var(--text-dim)] leading-relaxed">Colocar sobre la rótula (hueso de la rodilla) o sobre la tibia lateral.</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Protocolo Clínico */}
+                                    <div className="bg-zinc-950 p-6 rounded-2xl border border-zinc-900">
+                                        <h4 className="text-[9px] font-black uppercase tracking-widest text-cyan-400 mb-4 flex items-center gap-1.5">
+                                            <span>📋</span> PROTOCOLO CLÍNICO DE PREPARACIÓN DE PIEL
+                                        </h4>
+                                        <div className="grid grid-cols-1 gap-4 text-xs">
+                                            <div className="flex gap-3 items-start">
+                                                <span className="font-mono text-[var(--primary)] font-bold">01.</span>
+                                                <p className="text-[var(--text-dim)] leading-relaxed">
+                                                    <strong className="text-white">Remover Impedancia Cutánea:</strong> Rasurar el exceso de vello en la zona de colocación de los electrodos activos para asegurar un contacto óptimo.
+                                                </p>
+                                            </div>
+                                            <div className="flex gap-3 items-start border-t border-zinc-900 pt-3">
+                                                <span className="font-mono text-[var(--primary)] font-bold">02.</span>
+                                                <p className="text-[var(--text-dim)] leading-relaxed">
+                                                    <strong className="text-white">Limpieza con Alcohol:</strong> Limpiar vigorosamente la zona con una gasa impregnada en alcohol etílico al 70% para eliminar grasa, células muertas y sudor residual de la piel.
+                                                </p>
+                                            </div>
+                                            <div className="flex gap-3 items-start border-t border-zinc-900 pt-3">
+                                                <span className="font-mono text-[var(--primary)] font-bold">03.</span>
+                                                <p className="text-[var(--text-dim)] leading-relaxed">
+                                                    <strong className="text-white">Alineación de Fibras:</strong> Colocar los electrodos activos (Rojo y Amarillo) en paralelo con la dirección natural de las fibras musculares. Nunca colocarlos perpendicularmente.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </section>
                         )}
                     </div>

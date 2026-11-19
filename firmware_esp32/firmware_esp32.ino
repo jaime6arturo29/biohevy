@@ -5,9 +5,9 @@
 #include <ArduinoJson.h>
 
 // ================= CONFIGURACIÓN =================
-const char* ssid = "TU_RED_WIFI";
-const char* password = "TU_PASSWORD";
-const char* websockets_server = "ws://192.168.1.XX:8000/ws/emg"; // IP del backend FastAPI
+const char* ssid = "GalGom";
+const char* password = "Gala0729$";
+const char* websockets_server = "ws://10.76.255.112:8000/ws/emg"; // IP del backend FastAPI
 
 // ================= HARDWARE =================
 Adafruit_ADS1115 ads; // Dirección I2C por defecto 0x48
@@ -71,13 +71,10 @@ void setup() {
     Serial.println("Error: No se pudo conectar al WebSocket.");
   }
 
-  // 4. Configuración del Hardware Timer (1000 Hz)
-  // Frecuencia base ESP32 = 80 MHz. Prescaler 80 -> 1 tick = 1 microsegundo
-  timer = timerBegin(0, 80, true);
-  timerAttachInterrupt(timer, &onTimer, true);
-  // Alarma cada 1000 ticks (1000 microsegundos = 1 milisegundo)
-  timerAlarmWrite(timer, 1000, true);
-  timerAlarmEnable(timer);
+  // 4. Configuración del Hardware Timer (1000 Hz) compatible con ESP32 Core 3.x
+  timer = timerBegin(1000000); // Frecuencia de 1 MHz
+  timerAttachInterrupt(timer, &onTimer);
+  timerAlarm(timer, 1000, true, 0); // Dispara cada 1000 microsegundos (1 ms = 1000 Hz)
   Serial.println("Adquisición sEMG Iniciada (1000 Hz)...");
 }
 

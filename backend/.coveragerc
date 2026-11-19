@@ -1,0 +1,21 @@
+[run]
+source = 
+    main
+    biomech_engine
+    database
+    models
+    schemas
+omit =
+    tests/*
+    seed.py
+    run_tests.py
+    migrate.py
+    diagnostico_emg.py
+    test_engine.py
+    test_integration.py
+    update_images.py
+    update_lat.py
+
+[report]
+show_missing = True
+precision = 1

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import asyncio
@@ -11,13 +12,24 @@ from database import engine, get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-models.Base.metadata.create_all(bind=engine)
+try:
+    models.Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"[SYSTEM] Conexión a base de datos diferida o en modo test: {e}")
 
 app = FastAPI(title="BioHevy API")
 
-# Montar archivos estáticos del frontend (ruta relativa para portabilidad)
-frontend_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
-app.mount("/app", StaticFiles(directory=frontend_path), name="app")
+# Configurar rutas absolutas para portabilidad
+base_dir = os.path.dirname(os.path.abspath(__file__))
+dist_path = os.path.join(base_dir, "..", "biohevy-web", "dist")
+assets_path = os.path.join(dist_path, "assets")
+
+# Montar los assets estáticos compilados de React de manera opcional
+if os.path.exists(assets_path):
+    app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+    print("[SYSTEM] Frontend compilado de React detectado y montado.")
+else:
+    print("[SYSTEM] Ejecutando en modo de desarrollo separado (Next.js en puerto 3000 / FastAPI en puerto 8000).")
 
 # Configurar CORS para el frontend en React
 app.add_middleware(
@@ -167,6 +179,11 @@ def end_session(session_id: int, data: schemas.SessionEnd, db: Session = Depends
 
         total_volume = 0
         for s in data.sets:
+            # Validar que el ejercicio exista antes de insertar para garantizar integridad referencial (ISO 25010)
+            ex_check = db.query(models.Exercise).filter(models.Exercise.id == s.exercise_id).first()
+            if not ex_check:
+                raise HTTPException(status_code=400, detail=f"Ejercicio con id {s.exercise_id} no existe")
+
             total_volume += (s.reps or 0) * (s.weight or 0)
             db_set = models.Set(
                 session_id=session_id,
@@ -298,43 +315,128 @@ def get_news():
     ]
 
 # --- MÓDULO BIOMECÁNICO (Real-time) ---
+# ConnectionManager para reenviar datos del ESP32 a todos los frontends conectados
+class ConnectionManager:
+    def __init__(self):
+        self.frontend_connections: List[WebSocket] = []
+
+    async def connect_frontend(self, websocket: WebSocket):
+        await websocket.accept()
+        self.frontend_connections.append(websocket)
+        print(f"[WS] 🖥️ Frontend conectado. Total frontends: {len(self.frontend_connections)}")
+
+    def disconnect_frontend(self, websocket: WebSocket):
+        if websocket in self.frontend_connections:
+            self.frontend_connections.remove(websocket)
+        print(f"[WS] 🖥️ Frontend desconectado. Total frontends: {len(self.frontend_connections)}")
+
+    async def broadcast_to_frontends(self, message: dict):
+        dead = []
+        for conn in self.frontend_connections:
+            try:
+                await conn.send_json(message)
+            except Exception:
+                dead.append(conn)
+        for d in dead:
+            self.disconnect_frontend(d)
+
+manager = ConnectionManager()
+
+# Predictores globales — fs=430 Hz (frecuencia REAL del ADS1115 leyendo 2 canales por I2C)
+predictor_ch1 = biomech_engine.FatiguePredictor(fs=430, window_ms=300, overlap_ms=150)
+predictor_ch2 = biomech_engine.FatiguePredictor(fs=430, window_ms=300, overlap_ms=150)
+
 @app.websocket("/ws/emg")
 async def websocket_emg(websocket: WebSocket):
+    """Endpoint para el ESP32. Recibe datos crudos y los reenvía procesados a los frontends."""
     await websocket.accept()
-    
-    # Instanciamos predictores independientes por cada canal
-    predictor_ch1 = biomech_engine.FatiguePredictor(fs=1000, window_ms=200, overlap_ms=100)
-    predictor_ch2 = biomech_engine.FatiguePredictor(fs=1000, window_ms=200, overlap_ms=100)
+    print("[WS] ESP32 conectado al servidor.")
     
     try:
         while True:
-            # Recibir paquete JSON en ráfaga (50 muestras) desde el ESP32
             data = await websocket.receive_json()
             
             if "ch1" in data and "ch2" in data:
                 ch1_data = data["ch1"]
                 ch2_data = data["ch2"]
                 
-                # Procesar cada canal
+                # Procesar cada canal con el motor biomecánico
                 metrics_ch1, alerts_ch1 = predictor_ch1.process_incoming_data(ch1_data)
                 metrics_ch2, alerts_ch2 = predictor_ch2.process_incoming_data(ch2_data)
                 
-                # Si hay alertas generadas (calibración terminada o fatiga inminente), enviarlas al frontend
-                for alert in alerts_ch1:
-                    await websocket.send_json({"channel": 1, "alert": alert})
-                for alert in alerts_ch2:
-                    await websocket.send_json({"channel": 2, "alert": alert})
-                    
-                # También podemos enviar un submuestreo de las métricas (RMS/MNF) para el dashboard
-                if metrics_ch1 or metrics_ch2:
-                    await websocket.send_json({
-                        "type": "METRICS_UPDATE",
-                        "ch1": metrics_ch1[-1] if metrics_ch1 else None,
-                        "ch2": metrics_ch2[-1] if metrics_ch2 else None
-                    })
+                # Debug: mostrar métricas en consola
+                if metrics_ch1:
+                    m = metrics_ch1[-1]
+                    active = "ACT" if m.get('is_active', False) else "rest"
+                    st = m.get('state', '?')
+                    fi = m.get('fatigue_index', 0)
+                    ms = m.get('mnf_score', 0)
+                    vs = m.get('valley_score', 0)
+                    ps = m.get('peak_score', 0)
+                    nf = predictor_ch1.noise_floor
+                    th = predictor_ch1.activity_threshold
+                    print(f"[EMG] {active} RMS={m.get('rms',0):.0f} NF={nf:.0f} TH={th:.0f} MNF={m.get('mnf',0):.0f}Hz | FI={fi:.1f}% (mnf:{ms:.0f} valley:{vs:.0f} peak:{ps:.0f}) | {st} | Alerts:{len(alerts_ch1)}")
+                
+                # Construir payload para el frontend con datos reales
+                payload = {
+                    "type": "REALTIME_EMG",
+                    "ch1": {
+                        "raw": ch1_data,
+                        "metrics": metrics_ch1[-1] if metrics_ch1 else None,
+                        "alerts": alerts_ch1
+                    },
+                    "ch2": {
+                        "raw": ch2_data,
+                        "metrics": metrics_ch2[-1] if metrics_ch2 else None,
+                        "alerts": alerts_ch2
+                    }
+                }
+                
+                # Reenviar a todos los frontends conectados
+                await manager.broadcast_to_frontends(payload)
                     
     except WebSocketDisconnect:
-        print("Sensor ESP32 desconectado")
+        print("[WS] 🔌 ESP32 desconectado.")
+    except Exception as e:
+        print(f"[WS] 💥 Error en WebSocket ESP32: {e}")
+        traceback.print_exc()
+
+@app.websocket("/ws/emg/frontend")
+async def websocket_emg_frontend(websocket: WebSocket):
+    """Endpoint para el frontend React. Recibe comandos y envía datos procesados."""
+    await manager.connect_frontend(websocket)
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                cmd = json.loads(raw)
+                action = cmd.get("action", "")
+                
+                if action == "START_MONITORING":
+                    predictor_ch1.start_monitoring()
+                    predictor_ch2.start_monitoring()
+                    print("[WS] 📡 Monitoreo EMG iniciado — Auto-calibración activa.")
+                    await websocket.send_json({"type": "STATE_CHANGE", "state": "LISTENING"})
+                    
+                elif action == "NEW_SET":
+                    predictor_ch1.start_monitoring()
+                    predictor_ch2.start_monitoring()
+                    print("[WS] 🔄 Nueva serie — Recalibrando automáticamente.")
+                    await websocket.send_json({"type": "STATE_CHANGE", "state": "LISTENING"})
+                    
+                elif action == "RESET":
+                    predictor_ch1.reset()
+                    predictor_ch2.reset()
+                    print("[WS] ⏹ Monitoreo detenido.")
+                    await websocket.send_json({"type": "STATE_CHANGE", "state": "IDLE"})
+                    
+            except json.JSONDecodeError:
+                pass
+                
+    except WebSocketDisconnect:
+        manager.disconnect_frontend(websocket)
+    except Exception:
+        manager.disconnect_frontend(websocket)
 
 @app.get("/sessions")
 def get_sessions(user_id: int, db: Session = Depends(get_db)):
@@ -384,6 +486,25 @@ def get_user_stats(user_id: int, db: Session = Depends(get_db)):
         "total_volume": total_volume,
         "total_calories": total_calories
     }
+
+# ================= SERVIR FRONTEND ESTÁTICO (PORTABILIDAD) =================
+@app.get("/")
+def serve_index():
+    index_html = os.path.join(dist_path, "index.html")
+    if os.path.exists(index_html):
+        return FileResponse(index_html)
+    return {"message": "BioHevy API is running, but React build was not found. Please compile frontend using 'npm run build'."}
+
+@app.get("/{catchall:path}")
+def serve_spa_fallback(catchall: str):
+    # Evitar capturar rutas de la API reales
+    if catchall.startswith("api") or catchall.startswith("ws") or catchall.startswith("docs"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    
+    index_html = os.path.join(dist_path, "index.html")
+    if os.path.exists(index_html):
+        return FileResponse(index_html)
+    raise HTTPException(status_code=404, detail="SPA Index not found")
 
 if __name__ == "__main__":
     import uvicorn

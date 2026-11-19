@@ -1,0 +1,717 @@
+{
+  "info": {
+    "_postman_id": "biohevy-api-quality-collection-v1",
+    "name": "BioHevy API — Suite de Pruebas de Calidad (ISO 25010)",
+    "description": "Colección completa de pruebas funcionales, de integración, rendimiento y casos de borde para la API REST de BioHevy (FastAPI). Diseñada para la evaluación de la rúbrica de calidad de software.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "activeSessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdRoutineId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Catálogos y Ejercicios",
+      "item": [
+        {
+          "name": "GET /exercises — Lista completa",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exercises",
+              "host": ["{{baseUrl}}"],
+              "path": ["exercises"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Tiempo de respuesta < 500ms (ISO 25010 Rendimiento)\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Respuesta es un arreglo de ejercicios\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    pm.expect(jsonData.length).to.be.above(0);",
+                  "    pm.expect(jsonData[0]).to.have.property('id');",
+                  "    pm.expect(jsonData[0]).to.have.property('name');",
+                  "    pm.expect(jsonData[0]).to.have.property('muscle_group');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /exercises?group_id=Pecho — Filtro por grupo muscular",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exercises?group_id=Pecho",
+              "host": ["{{baseUrl}}"],
+              "path": ["exercises"],
+              "query": [
+                {
+                  "key": "group_id",
+                  "value": "Pecho"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Todos los ejercicios pertenecen a 'Pecho'\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    jsonData.forEach(function(ex) {",
+                  "        pm.expect(ex.muscle_group).to.eql('Pecho');",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /muscle-groups — Grupos musculares únicos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/muscle-groups",
+              "host": ["{{baseUrl}}"],
+              "path": ["muscle-groups"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Retorna lista de grupos estructurados\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    pm.expect(jsonData.length).to.be.above(0);",
+                  "    pm.expect(jsonData[0]).to.have.property('name');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /news — Noticias y consejos deportivos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/news",
+              "host": ["{{baseUrl}}"],
+              "path": ["news"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Formato de noticias correcto\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    pm.expect(jsonData[0]).to.have.property('title');",
+                  "    pm.expect(jsonData[0]).to.have.property('content');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Gestión de Usuarios",
+      "item": [
+        {
+          "name": "GET /users/{id} — Usuario existente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Valida schema del usuario\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.id).to.eql(Number(pm.collectionVariables.get(\"userId\")));",
+                  "    pm.expect(jsonData).to.have.property('username');",
+                  "    pm.expect(jsonData).to.have.property('weight_kg');",
+                  "    pm.expect(jsonData).to.have.property('height_cm');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /users/{id}/settings — Actualizar preferencias de usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"unit_preference\": \"kg\",\n  \"measure_unit\": \"cm\",\n  \"theme\": \"dark\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "settings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Respuesta status success\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql('success');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /stats/{id} — Estadísticas del usuario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stats/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["stats", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Contiene métricas acumuladas\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('total_sessions');",
+                  "    pm.expect(jsonData).to.have.property('total_volume');",
+                  "    pm.expect(jsonData).to.have.property('total_calories');",
+                  "    pm.expect(jsonData.total_sessions).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Gestión de Rutinas",
+      "item": [
+        {
+          "name": "POST /routines — Crear rutina válida",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rutina Postman QA\",\n  \"user_id\": {{userId}},\n  \"exercises\": [\n    {\n      \"exercise_id\": 1,\n      \"order_index\": 1,\n      \"template_data\": \"[{\\\"reps\\\": 10, \\\"weight\\\": 80}]\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/routines",
+              "host": ["{{baseUrl}}"],
+              "path": ["routines"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.id) {",
+                  "    pm.collectionVariables.set(\"createdRoutineId\", jsonData.id);",
+                  "}",
+                  "pm.test(\"Retorna ID y nombre de la rutina\", function () {",
+                  "    pm.expect(jsonData).to.have.property('id');",
+                  "    pm.expect(jsonData.name).to.eql('Rutina Postman QA');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /routines — Listar rutinas del usuario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/routines?user_id={{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["routines"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Lista contiene la rutina creada\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    var found = jsonData.some(r => r.name === 'Rutina Postman QA');",
+                  "    pm.expect(found).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /routines/{id} — Actualizar nombre de rutina",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rutina Postman QA (Actualizada)\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/routines/{{createdRoutineId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["routines", "{{createdRoutineId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Actualización exitosa\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql('success');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /routines/{id} — Eliminar rutina",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/routines/{{createdRoutineId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["routines", "{{createdRoutineId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Eliminación exitosa\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql('success');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Flujo E2E de Sesión de Entrenamiento",
+      "item": [
+        {
+          "name": "POST /sessions/start — Iniciar sesión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{userId}},\n  \"start_time\": \"2026-11-18T10:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sessions/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "start"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.expect(jsonData).to.have.property('id');",
+                  "pm.collectionVariables.set(\"activeSessionId\", jsonData.id);",
+                  "pm.test(\"Sesión creada para el usuario correcto\", function () {",
+                  "    pm.expect(jsonData.user_id).to.eql(Number(pm.collectionVariables.get(\"userId\")));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /sessions/{id}/end — Finalizar sesión con cálculo de volumen",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"end_time\": \"2026-11-18T10:45:00Z\",\n  \"sets\": [\n    {\n      \"exercise_id\": 1,\n      \"reps\": 10,\n      \"weight\": 80.0,\n      \"is_failure\": false\n    },\n    {\n      \"exercise_id\": 1,\n      \"reps\": 10,\n      \"weight\": 80.0,\n      \"is_failure\": true\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sessions/{{activeSessionId}}/end",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "{{activeSessionId}}", "end"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Cálculo exacto de volumen: (10*80 + 10*80 = 1600kg)\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.volume).to.eql(1600);",
+                  "});",
+                  "pm.test(\"Cálculo de calorías mayor a cero\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.calories).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /sessions — Listar historial de sesiones del usuario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sessions?user_id={{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"El historial contiene la sesión recién finalizada\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    var current = jsonData.find(s => s.id === Number(pm.collectionVariables.get(\"activeSessionId\")));",
+                  "    pm.expect(current).to.not.be.undefined;",
+                  "    pm.expect(current.total_volume).to.eql(1600);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Casos de Borde y Negative Testing (ISO 25010 Seguridad & Errores)",
+      "item": [
+        {
+          "name": "GET /users/99999 — Usuario inexistente debe ser 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/99999",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "99999"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Responde con HTTP 404 Not Found\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test(\"No responde con error interno 500 ni null con 200\", function () {",
+                  "    pm.expect(pm.response.code).to.not.eql(500);",
+                  "    pm.expect(pm.response.code).to.not.eql(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /sessions/start — Usuario inexistente debe ser 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 99999,\n  \"start_time\": \"2026-11-18T10:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sessions/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "start"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Responde con HTTP 404 Not Found para usuario inválido\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /sessions/99999/end — Sesión inexistente debe ser 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"end_time\": \"2026-11-18T10:45:00Z\",\n  \"sets\": []\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sessions/99999/end",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "99999", "end"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Responde con HTTP 404 Not Found para sesión inexistente\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /routines/99999 — Rutina inexistente debe ser 404",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/routines/99999",
+              "host": ["{{baseUrl}}"],
+              "path": ["routines", "99999"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Responde con HTTP 404 Not Found para rutina inexistente\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /sessions/start con Body inválido — Validación Pydantic (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"not_a_number\",\n  \"start_time\": \"invalid_date\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sessions/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "start"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Responde con HTTP 422 Unprocessable Entity por tipos de datos erróneos\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

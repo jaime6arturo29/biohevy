@@ -15,7 +15,7 @@ echo  =================================================================
 echo.
 
 echo [+] Iniciando Backend Engine (FastAPI en Puerto 8000)...
-start "BioHevy Backend API" cmd /c "cd /d "%~dp0backend" && py -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
+start "BioHevy Backend API" cmd /c "cd /d "%~dp0backend" && py -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
 echo [+] Iniciando Frontend Dashboard (Next.js en Puerto 3000)...
 start "BioHevy Frontend App" cmd /c "cd /d "%~dp0biohevy-web" && npm run dev"
