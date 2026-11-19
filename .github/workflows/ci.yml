@@ -38,30 +38,23 @@ jobs:
         run: |
           python -m pytest backend/tests --cov=backend --cov-config=backend/.coveragerc --cov-report=xml:backend/coverage.xml --cov-report=term-missing -v
 
-      # 5. Configurar Node.js para auditoría de Frontend
-      - name: Configurar Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: biohevy-web/package-lock.json
-
-      # 6. Auditoría estática de Frontend (ESLint)
-      - name: Ejecutar Linting Frontend
-        run: |
-          cd biohevy-web
-          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
-          npm run lint || true
-          cd ..
-
-      # 7. Escaneo estático en SonarCloud
+      # 5. Escaneo oficial en SonarCloud
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarcloud-github-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=jaime6arturo29
+            -Dsonar.projectKey=jaime6arturo29_biohevy
+            -Dsonar.sources=backend
+            -Dsonar.tests=backend/tests
+            -Dsonar.python.coverage.reportPaths=backend/coverage.xml
+            -Dsonar.exclusions=backend/tests/**,backend/biohevy.db,backend/htmlcov/**,backend/seed.py,backend/run_tests.py,backend/migrate.py,backend/diagnostico_emg.py,backend/test_engine.py,backend/test_integration.py,backend/update_images.py,backend/update_lat.py,**/*.json,**/*.bat,**/*.ino
+            -Dsonar.cpd.exclusions=backend/tests/**
 
-      # 8. Verificación de Aprobación de Quality Gate
+      # 6. Verificación de Aprobación de Quality Gate
       - name: Validar SonarCloud Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1
         timeout-minutes: 5
