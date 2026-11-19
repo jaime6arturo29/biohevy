@@ -193,7 +193,7 @@
                   "});",
                   "pm.test(\"Valida schema del usuario\", function () {",
                   "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.id).to.eql(Number(pm.collectionVariables.get(\"userId\")));",
+                  "    pm.expect(jsonData.id).to.eql(Number(pm.variables.get(\"userId\")));",
                   "    pm.expect(jsonData).to.have.property('username');",
                   "    pm.expect(jsonData).to.have.property('weight_kg');",
                   "    pm.expect(jsonData).to.have.property('height_cm');",
@@ -310,6 +310,8 @@
                   "var jsonData = pm.response.json();",
                   "if (jsonData.id) {",
                   "    pm.collectionVariables.set(\"createdRoutineId\", jsonData.id);",
+                  "    pm.environment.set(\"createdRoutineId\", jsonData.id);",
+                  "    pm.variables.set(\"createdRoutineId\", jsonData.id);",
                   "}",
                   "pm.test(\"Retorna ID y nombre de la rutina\", function () {",
                   "    pm.expect(jsonData).to.have.property('id');",
@@ -461,8 +463,10 @@
                   "var jsonData = pm.response.json();",
                   "pm.expect(jsonData).to.have.property('id');",
                   "pm.collectionVariables.set(\"activeSessionId\", jsonData.id);",
+                  "pm.environment.set(\"activeSessionId\", jsonData.id);",
+                  "pm.variables.set(\"activeSessionId\", jsonData.id);",
                   "pm.test(\"Sesión creada para el usuario correcto\", function () {",
-                  "    pm.expect(jsonData.user_id).to.eql(Number(pm.collectionVariables.get(\"userId\")));",
+                  "    pm.expect(jsonData.user_id).to.eql(Number(pm.variables.get(\"userId\")));",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -540,7 +544,7 @@
                   "pm.test(\"El historial contiene la sesión recién finalizada\", function () {",
                   "    var jsonData = pm.response.json();",
                   "    pm.expect(jsonData).to.be.an('array');",
-                  "    var current = jsonData.find(s => s.id === Number(pm.collectionVariables.get(\"activeSessionId\")));",
+                  "    var current = jsonData.find(s => s.id === Number(pm.variables.get(\"activeSessionId\")));",
                   "    pm.expect(current).to.not.be.undefined;",
                   "    pm.expect(current.total_volume).to.eql(1600);",
                   "});"
