@@ -32,7 +32,17 @@ const API_BASE = typeof window !== 'undefined'
                 exercises: { "Press de Banca con Barra": "Barbell Bench Press", "Sentadilla con Barra": "Barbell Squat", "Peso Muerto": "Deadlift", "Dominadas": "Pull-ups", "Elevacion de Gemelos de Pie": "Standing Calf Raises" }
             }
         };
-        const BioHevyEMGMonitor = ({ t }: { t: any }) => {
+
+        const getSecureRandom = (): number => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+        const arr = new Uint32Array(1);
+        window.crypto.getRandomValues(arr);
+        return arr[0] / (0xffffffff + 1);
+    }
+    return 0.5;
+};
+
+        const BioHevyEMGMonitor = () => {
             const [connected, setConnected] = useState(false);
             const [zoom, setZoom] = useState(1.0);
             const [rawSignal, setRawSignal] = useState(Array(200).fill(0));
@@ -105,9 +115,9 @@ const API_BASE = typeof window !== 'undefined'
                                     if (m.fatigue_index !== undefined) setFatigueIndex(m.fatigue_index);
                                     if (m.state) setCalibrationState(m.state);
                                     if (m.calibration_progress !== undefined) setCalibrationProgress(m.calibration_progress);
-                                    setSnr(parseFloat((28.0 + Math.random() * 1.0 - 0.5).toFixed(1)));
-                                    setAccuracy(parseFloat((96.0 + Math.random() * 0.6 - 0.3).toFixed(1)));
-                                    setR2(parseFloat((0.91 + Math.random() * 0.04 - 0.02).toFixed(2)));
+                                    setSnr(parseFloat((28.0 + getSecureRandom() * 1.0 - 0.5).toFixed(1)));
+                                    setAccuracy(parseFloat((96.0 + getSecureRandom() * 0.6 - 0.3).toFixed(1)));
+                                    setR2(parseFloat((0.91 + getSecureRandom() * 0.04 - 0.02).toFixed(2)));
                                 }
                                 if (data.ch1.alerts && data.ch1.alerts.length > 0) {
                                     for (const alert of data.ch1.alerts) {
@@ -137,12 +147,12 @@ const API_BASE = typeof window !== 'undefined'
                         const freq = isFatigued ? 60 : 100;
                         const amp = isFatigued ? 400 : 150;
                         
-                        const newRaw = amp * Math.sin(2 * Math.PI * freq * time) + (Math.random() * 50 - 25);
+                        const newRaw = amp * Math.sin(2 * Math.PI * freq * time) + (getSecureRandom() * 50 - 25);
                         const newFiltered = newRaw * 0.8;
                         const newRms = Math.abs(newFiltered) * 0.7 + (isFatigued ? 50 : 0);
                         
                         const baseMnf = isFatigued ? 68.0 : 118.0;
-                        const noiseMnf = Math.random() * 4.0 - 2.0;
+                        const noiseMnf = getSecureRandom() * 4.0 - 2.0;
                         const newMnf = Math.max(45, baseMnf + noiseMnf - (fatigueLevel * 2.5));
 
                         setRawSignal(prev => [...prev.slice(1), newRaw]);
@@ -151,9 +161,9 @@ const API_BASE = typeof window !== 'undefined'
                         setMnfSignal(prev => [...prev.slice(1), newMnf]);
                         
                         const baseSnr = isFatigued ? 26.5 : 28.8;
-                        setSnr(parseFloat((baseSnr + Math.random() * 0.6 - 0.3).toFixed(1)));
-                        setAccuracy(parseFloat((96.2 + Math.random() * 0.4 - 0.2).toFixed(1)));
-                        setR2(parseFloat((0.92 + Math.random() * 0.03 - 0.01).toFixed(2)));
+                        setSnr(parseFloat((baseSnr + getSecureRandom() * 0.6 - 0.3).toFixed(1)));
+                        setAccuracy(parseFloat((96.2 + getSecureRandom() * 0.4 - 0.2).toFixed(1)));
+                        setR2(parseFloat((0.92 + getSecureRandom() * 0.03 - 0.01).toFixed(2)));
 
                         if (isFatigued && !fatigueAlert) {
                             setFatigueAlert("Fatiga Inminente Detectada (Simulación)");
@@ -479,7 +489,7 @@ const API_BASE = typeof window !== 'undefined'
             const [viewingExerciseHistory, setViewingExerciseHistory] = useState(null);
             const [summary, setSummary] = useState(null);
             const [isElectrodeConnected, setIsElectrodeConnected] = useState(false);
-            const [fatigue, setFatigue] = useState(20);
+            // fatigue state removed (unused)
             const [restTimer, setRestTimer] = useState(0);
             const [isTimerRunning, setIsTimerRunning] = useState(false);
             const [restTimerInput, setRestTimerInput] = useState(90);
@@ -489,18 +499,43 @@ const API_BASE = typeof window !== 'undefined'
             const restTimerRef = useRef<any>(null);
             const t = translations[user?.lang || 'es'];
 
+            const fetchUser = async () => {
+                if (!clerkUser) return;
+                try {
+                    const res = await fetch(`${API_BASE}/auth/clerk-login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ clerk_id: clerkUser.id, username: clerkUser.fullName || 'User' })
+                    });
+                    const dbUser = await res.json();
+                    
+                    const saved = localStorage.getItem('biohevy_user_v5');
+                    const localSettings = saved ? JSON.parse(saved) : { theme: 'dark', lang: 'es', emg_enabled: true, weight_kg: 80, height_cm: 180 };
+                    
+                    setUser({ ...localSettings, ...dbUser });
+                } catch(e) { console.error("Error syncing user", e); }
+            };
+
+            const fetchExercises = () => fetch(`${API_BASE}/exercises`).then(r => r.json()).then(setExercises).catch(e => console.error("Exercises fetch error:", e));
+            const fetchRoutines = () => fetch(`${API_BASE}/routines?user_id=${user.id}`).then(r => r.json()).then(setRoutines).catch(e => console.error("Routines fetch error:", e));
+            const fetchHistory = () => fetch(`${API_BASE}/sessions?user_id=${user.id}`).then(r => r.json()).then(setHistory).catch(e => console.error("History fetch error:", e));
+            const fetchNews = () => fetch(`${API_BASE}/news`).then(r => r.json()).then(setNews).catch(e => console.error("News fetch error:", e));
+
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             useEffect(() => {
                 fetchUser();
                 fetchExercises();
                 fetchNews();
             }, []);
 
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             useEffect(() => {
                 if (user) { fetchRoutines(); fetchHistory(); }
                 if (user?.theme === 'light') { document.body.classList.add('theme-light'); }
                 else { document.body.classList.remove('theme-light'); }
             }, [user?.id, user?.theme]);
 
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             useEffect(() => {
                 if (activeSession) { timerRef.current = setInterval(() => setTimer(v => v + 1), 1000); }
                 else { clearInterval(timerRef.current); setTimer(0); }
@@ -517,27 +552,7 @@ const API_BASE = typeof window !== 'undefined'
                 return () => clearInterval(restTimerRef.current);
             }, [restTimer, isTimerRunning]);
 
-            const fetchUser = async () => {
-                if (!clerkUser) return;
-                try {
-                    const res = await fetch(`${API_BASE}/auth/clerk-login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ clerk_id: clerkUser.id, username: clerkUser.fullName || 'User' })
-                    });
-                    const dbUser = await res.json();
-                    
-                    let saved = localStorage.getItem('biohevy_user_v5');
-                    let localSettings = saved ? JSON.parse(saved) : { theme: 'dark', lang: 'es', emg_enabled: true, weight_kg: 80, height_cm: 180 };
-                    
-                    setUser({ ...localSettings, ...dbUser });
-                } catch(e) { console.error("Error syncing user", e); }
-            };
 
-            const fetchExercises = () => fetch(`${API_BASE}/exercises`).then(r => r.json()).then(setExercises).catch(e => console.error("Exercises fetch error:", e));
-            const fetchRoutines = () => fetch(`${API_BASE}/routines?user_id=${user.id}`).then(r => r.json()).then(setRoutines).catch(e => console.error("Routines fetch error:", e));
-            const fetchHistory = () => fetch(`${API_BASE}/sessions?user_id=${user.id}`).then(r => r.json()).then(setHistory).catch(e => console.error("History fetch error:", e));
-            const fetchNews = () => fetch(`${API_BASE}/news`).then(r => r.json()).then(setNews).catch(e => console.error("News fetch error:", e));
 
             const updateSettings = async (s: any) => { setUser(s); localStorage.setItem('biohevy_user_v5', JSON.stringify(s)); };
             const startSession = async (r: any) => {
@@ -601,14 +616,14 @@ const API_BASE = typeof window !== 'undefined'
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' }, 
                         body: JSON.stringify(payload) 
-                    }).catch(e => { throw new Error("Network error") });
+                    }).catch(() => { throw new Error("Network error") });
                     
                     if (!res.ok) throw new Error("Failed to end session on server");
                     const resData = await res.json();
 
                     // Manually add to history to ensure it shows up immediately with correct keys
                     const newSession = {
-                        id: Date.now(),
+                        id: Number(new Date().getTime()),
                         start_time: activeSession.start_time,
                         duration_minutes: Math.floor(timer / 60),
                         exercises: activeSession.exercises,
@@ -1157,7 +1172,7 @@ const API_BASE = typeof window !== 'undefined'
                                 <div className="text-red-500 text-5xl mb-6">⚠️</div>
                                 <h2 className="text-3xl font-black italic uppercase text-[var(--text)] mb-4 tracking-tighter leading-none">¿Eliminar Rutina?</h2>
                                 <p className="text-zinc-400 text-xs mb-8 leading-relaxed">
-                                    Estás a punto de eliminar la rutina <span className="text-white font-bold">"{routineToDelete.name}"</span>. Esta acción no se puede deshacer.
+                                    Estás a punto de eliminar la rutina <span className="text-white font-bold">&quot;{routineToDelete.name}&quot;</span>. Esta acción no se puede deshacer.
                                 </p>
                                 <div className="flex gap-4">
                                     <button 
